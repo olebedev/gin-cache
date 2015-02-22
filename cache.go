@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -147,6 +148,7 @@ func New(o ...Options) gin.HandlerFunc {
 
 		} else if err == nil {
 			// cache found
+			start := time.Now()
 			dec := gob.NewDecoder(bytes.NewBuffer(data))
 			dec.Decode(&cch)
 			c.Writer.WriteHeader(cch.Status)
@@ -155,7 +157,7 @@ func New(o ...Options) gin.HandlerFunc {
 					c.Writer.Header().Add(k, v)
 				}
 			}
-			c.Writer.Header().Add("X-Gin-Cache", "yes")
+			c.Writer.Header().Add("X-Gin-Cache", fmt.Sprintf("%f ms", time.Now().Sub(start).Seconds()*1000))
 			c.Writer.Write(cch.Body)
 
 			if !cache.options.DoNotUseAbort {
