@@ -22,7 +22,7 @@ var (
 	ErrAlreadyExists = errors.New("already exists")
 )
 
-type cached struct {
+type Cached struct {
 	Status   int
 	Body     []byte
 	Header   http.Header
@@ -61,6 +61,43 @@ type Cache struct {
 	Store
 	options Options
 	expires map[string]time.Time
+}
+
+func (c *Cache) Get(key string) (*Cached, error) {
+
+	if data, err := c.Store.Get(key); err == nil {
+		var cch *Cached
+		dec := gob.NewDecoder(bytes.NewBuffer(data))
+		dec.Decode(&cch)
+
+		if cch.ExpireAt.Nanosecond() != 0 && cch.ExpireAt.Before(time.Now()) {
+			c.Store.Remove(key)
+			return nil, nil
+		}
+
+		return cch, nil
+	} else {
+		return nil, err
+	}
+
+	return nil, ErrNotFound
+}
+
+func (c *Cache) Set(key string, cch *Cached) error {
+	var b bytes.Buffer
+	enc := gob.NewEncoder(&b)
+
+	panicIf(enc.Encode(*cch))
+	return c.Store.Set(key, b.Bytes())
+}
+
+func (c *Cache) Update(key string, cch *Cached) error {
+	var b bytes.Buffer
+	enc := gob.NewEncoder(&b)
+
+	panicIf(enc.Encode(*cch))
+
+	return c.Store.Update(key, b.Bytes())
 }
 
 type wrappedWriter struct {
@@ -102,7 +139,6 @@ func New(o ...Options) gin.HandlerFunc {
 			return
 		}
 
-		var cch cached
 		tohash := c.Request.URL.RequestURI()
 		for _, k := range cache.options.Headers {
 			if v, ok := c.Request.Header[k]; ok {
@@ -113,7 +149,7 @@ func New(o ...Options) gin.HandlerFunc {
 
 		key := KEY_PREFIX + md5String(tohash)
 
-		if data, err := cache.Get(key); err == ErrNotFound {
+		if cch, _ := cache.Get(key); cch == nil {
 			// cache miss
 			writer := c.Writer
 			rw := wrappedWriter{ResponseWriter: c.Writer}
@@ -121,7 +157,7 @@ func New(o ...Options) gin.HandlerFunc {
 			c.Next()
 			c.Writer = writer
 
-			cch = cached{
+			cache.Set(key, &Cached{
 				Status: rw.Status(),
 				Body:   rw.body.Bytes(),
 				Header: http.Header(rw.Header()),
@@ -132,25 +168,11 @@ func New(o ...Options) gin.HandlerFunc {
 						return time.Now().Add(cache.options.Expire)
 					}
 				}(),
-			}
+			})
 
-			var b bytes.Buffer
-			enc := gob.NewEncoder(&b)
-
-			panicIf(enc.Encode(cch))
-			cache.Set(key, b.Bytes())
-
-			if cch.ExpireAt.Nanosecond() != 0 {
-				cache.expires[key] = cch.ExpireAt
-			}
-
-			// TODO: check expires
-
-		} else if err == nil {
+		} else {
 			// cache found
 			start := time.Now()
-			dec := gob.NewDecoder(bytes.NewBuffer(data))
-			dec.Decode(&cch)
 			c.Writer.WriteHeader(cch.Status)
 			for k, val := range cch.Header {
 				for _, v := range val {
@@ -163,9 +185,6 @@ func New(o ...Options) gin.HandlerFunc {
 			if !cache.options.DoNotUseAbort {
 				c.Abort()
 			}
-
-		} else {
-			panic(err)
 		}
 	}
 }
@@ -177,7 +196,7 @@ func md5String(url string) string {
 }
 
 func init() {
-	gob.Register(cached{})
+	gob.Register(Cached{})
 }
 
 func panicIf(err error) {
