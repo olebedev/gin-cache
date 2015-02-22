@@ -29,15 +29,16 @@ func main() {
       return store
     }(),
 
-    // it uses slice listed below as default to calculate key, if `Header` slice is not specified
+    // it uses slice listed below as default to calculate
+    // key, if `Header` slice is not specified
     Header: []string{
-			"User-Agent",
-			"Accept",
-			"Accept-Encoding",
-			"Accept-Language",
-			"Cookie",
-			"User-Agent",
-		},
+      "User-Agent",
+      "Accept",
+      "Accept-Encoding",
+      "Accept-Language",
+      "Cookie",
+      "User-Agent",
+    },
 
     // *gin.Context.Abort() will be invoked immediately after cache has been served
     // so, you can change this, but you should manage c.Writer.Written() flag by self
